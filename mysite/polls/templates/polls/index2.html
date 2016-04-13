@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script type="text/javascript" src="https://maps.googleapis.com/maps/api/js?sensor=false&libraries=visualization"></script>
+<script type="text/javascript" src="jquery-1.7.2.js"></script>
+<script type="text/javascript" src="jquery.eventsource.js"></script>
+<script src="markerclusterer.js" type="text/javascript"></script>
+<script type = "text/javascript" src = "http://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://js.pusher.com/3.0/pusher.min.js"></script>
+
+
+<style>
+    .navicon {
+        display: table-cell;
+        vertical-align: middle;
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+    body {
+        height: 100%;
+    }
+    html {
+        height: 100%;
+    }
+</style>
+</head>
+<body>
+    <nav style=" width: 100%; position: absolute; z-index: 1;">
+        <div style="display:table height:100%; width:30%; margin: 0 auto">
+            <div class="navicon">
+                <p style="margin-top: 10px; margin-bottom: 10px;color:blue; font-size: 30px;">
+                    <strong>TwitterMap</strong>
+                </p>
+            </div>
+            <div class="navicon">
+                <select style="font-size: 20px;"name="mydropdown" id="select">
+                    <option value='beer'>Beer</option>
+                    <option value='wine'>Wine</option>
+                </select>
+            </div>
+        </div>
+    </nav> 
+    <div id="map" style="width: 100%; height: 100%; overflow: auto"></div>
+
+<script type="text/javascript">
+    var topic1 = "{{topic}}";
+    var marker
+    var infowindow;
+    var markers = [];
+    var e = document.getElementById("select");
+    var candidate = String(e.options[e.selectedIndex].value); 
+    var map;
+    var markerCluster;
+
+
+    function initialize() {   
+
+        var myOptions = {
+            zoom: 2,
+            center: new google.maps.LatLng(40.774546, -70.433523),
+            mapTypeId: google.maps.MapTypeId.ROADMAP
+        };
+        
+        
+        map = new google.maps.Map(document.getElementById("map"), myOptions);
+        map.setCenter({lat: 40, lng: -70});
+        
+        attachGeofilter(map);
+
+        var queryInit = '{"query":{"match_phrase":{"text":"beer"}}}';
+
+        
+        $.ajax({
+            url: 'xxx/tweets/_search?size=10000&source='+queryInit,
+            success: function(data) {
+                var cur_size = data['hits']['total'];
+                console.log(cur_size);
+                var results = data['hits']['hits'].map(function(i) {
+                    return i['_source'];
+                });
+                
+                for (var i = 0; i < cur_size; ++i){
+
+                    temp = results[i];
+                    var iconImg = 'http://www.clker.com/cliparts/b/7/6/5/1308001441853739087google%20maps%20pin.svg.med.png';
+                    if (temp.sentiment == 'NEUTRAL') {
+                        iconImg = 'http://www.clker.com/cliparts/w/d/X/t/j/H/green-pin-with-shadow-md.png';
+                    }
+                    else if (temp.sentiment == 'NEGATIVE') {
+                        iconImg = 'http://www.clker.com/cliparts/c/9/m/4/B/d/google-maps-grey-marker-w-shadow-md.png';
+                    }
+                    marker = new google.maps.Marker({
+                        position: {lat: temp['coordinates'][1], lng: temp['coordinates'][0]},
+                        draggable: false,
+                        map: map,
+                        title: temp['text'] + " (" +temp['sentiment'] + " )",
+                        icon: new google.maps.MarkerImage(iconImg,null,null,new google.maps.Point(40,110), new google.maps.Size(100,80))
+                    });
+                    
+                        
+                    markers.push(marker);
+                
+                    attachMessage(marker);
+                    
+                    
+                }
+
+                markerCluster = new MarkerClusterer(map, markers, {
+                minZoom: 2,
+                maxZoom: 6,
+            
+                });
+            }
+        });
+        
+    }
+   	
+    google.maps.event.addDomListener(window, 'load', initialize);
+
+    Pusher.log = function(message) {
+      if (window.console && window.console.log) {
+        window.console.log(message);
+      }
+    };
+
+    var pusher = new Pusher('xxx', {
+      encrypted: true
+    });
+
+    var channel = pusher.subscribe('test_channel');
+    channel.bind('my_event', function(data) {
+        // alert(data.message);
+        var curTopic = String(e.options[e.selectedIndex].value);
+        var temp = JSON.parse(data.message)
+        if ((temp['text']).indexOf(curTopic) >= 0) { 
+            console.log(data.message);
+            var iconImg = 'http://www.clker.com/cliparts/b/7/6/5/1308001441853739087google%20maps%20pin.svg.med.png';
+            if (temp.sentiment == 'NEUTRAL') {
+                iconImg = 'http://www.clker.com/cliparts/w/d/X/t/j/H/green-pin-with-shadow-md.png';
+            }
+            else if (temp.sentiment == 'NEGATIVE') {
+                iconImg = 'http://www.clker.com/cliparts/c/9/m/4/B/d/google-maps-grey-marker-w-shadow-md.png';
+            }
+            marker = new google.maps.Marker({
+                            position: {lat: parseFloat(temp['coordinates'][1]), lng: parseFloat(temp['coordinates'][0])},
+                            draggable: false,
+                            map: map,
+                            title: temp['text'] + " (" +temp['sentiment'] + " )",
+                            icon: new google.maps.MarkerImage(iconImg,null,null,new google.maps.Point(40,110), new google.maps.Size(100,80))
+                        });
+                        
+                            
+            markers.push(marker);
+                    
+            attachMessage(marker);
+
+            markerCluster = new MarkerClusterer(map, markers, {
+                minZoom: 2,
+                maxZoom: 6,
+            });
+        }
+    });
+
+    function attachMessage(marker){
+ 
+    	google.maps.event.addListener(marker, "click", function() {
+            	infowindow = new google.maps.InfoWindow({
+                    content: marker.title
+                    });
+                infowindow.open(map,marker);
+                map.setZoom(9);
+                map.setCenter(marker.getPosition());
+                });
+       }
+       
+    function attachGeofilter(map){
+
+        map.addListener('click', function(e) {
+
+            console.log(e.latLng.lat() + "," + e.latLng.lng());
+            var queryJson = '{"query": {"filtered" : {"query" : {"match_all" : {}},"filter" : {"geo_distance" : {"distance" : "1000km","coordinates":{"lat" : ' + e.latLng.lat()+',"lon" : '+e.latLng.lng()+'}}}}}}';
+
+            // console.log(queryJson);
+            var tmp = document.getElementById("select");
+            var cand = String(tmp.options[tmp.selectedIndex].value); 
+            console.log('current select ' + cand);
+            
+            deleteMarkers();
+        
+            markerCluster.clearMarkers();
+            
+            
+            $.ajax({
+            url: 'xxx/tweets/_search?size=10000&source='+queryJson,
+            success: function(data) {
+                var cur_size = data['hits']['total'];
+                console.log(cur_size);
+                var results = data['hits']['hits'].map(function(i) {
+                    return i['_source'];
+                });
+
+
+                
+                for (var i = 0; i < cur_size; ++i){
+
+                    temp = results[i];
+
+                    var iconImg = 'http://www.clker.com/cliparts/b/7/6/5/1308001441853739087google%20maps%20pin.svg.med.png';
+                    if (temp.sentiment == 'NEUTRAL') {
+                        iconImg = 'http://www.clker.com/cliparts/w/d/X/t/j/H/green-pin-with-shadow-md.png';
+                    }
+                    else if (temp.sentiment == 'NEGATIVE') {
+                        iconImg = 'http://www.clker.com/cliparts/c/9/m/4/B/d/google-maps-grey-marker-w-shadow-md.png';
+                    }
+                    
+                    marker = new google.maps.Marker({
+                        position: {lat: temp['coordinates'][1], lng: temp['coordinates'][0]},
+                        draggable: false,
+                        map: map,
+                        title: temp['text'] + " (" +temp['sentiment'] + " )",
+                        icon: new google.maps.MarkerImage(iconImg,null,null,new google.maps.Point(40,110), new google.maps.Size(100,80))
+                    });
+                    
+                        
+                    markers.push(marker);
+                
+                    attachMessage(marker);
+                    
+                    
+                }
+
+                markerCluster = new MarkerClusterer(map, markers, {
+                minZoom: 2,
+                maxZoom: 6,
+            
+                });
+            }
+        }); 
+        });
+    }
+
+    e.onchange=function(){
+        
+        var myOptions = {
+            zoom: 2,
+            center: new google.maps.LatLng(37.4419, -122.1419),
+            mapTypeId: google.maps.MapTypeId.ROADMAP
+        };
+    	
+    	candidate = String(e.options[e.selectedIndex].value);   
+        var queryChange = '{"query":{"match_phrase":{"text":"'+ candidate +'"}}}';
+    	console.log(queryChange)
+    	deleteMarkers();
+    	
+    	markerCluster.clearMarkers();
+    	map = new google.maps.Map(document.getElementById("map"), myOptions);
+        map.setCenter({lat: 40, lng: -70});
+
+        attachGeofilter(map);
+        
+        $.ajax({
+            url: 'xxx/tweets/_search?size=10000&source='+queryChange,
+            success: function(data) {
+                var cur_size = data['hits']['total'];
+                console.log(cur_size);
+                var results = data['hits']['hits'].map(function(i) {
+                    return i['_source'];
+                });
+                //var stopPoint = Math.max(0, cur_size - 5000);
+                for (var i = 0; i < cur_size; ++i){
+
+                    temp = results[i];
+
+                    var iconImg = 'http://www.clker.com/cliparts/b/7/6/5/1308001441853739087google%20maps%20pin.svg.med.png';
+                    if (temp.sentiment == 'NEUTRAL') {
+                        iconImg = 'http://www.clker.com/cliparts/w/d/X/t/j/H/green-pin-with-shadow-md.png';
+                    }
+                    else if (temp.sentiment == 'NEGATIVE') {
+                        iconImg = 'http://www.clker.com/cliparts/c/9/m/4/B/d/google-maps-grey-marker-w-shadow-md.png';
+                    }
+                    
+                    marker = new google.maps.Marker({
+                        position: {lat: temp['coordinates'][1], lng: temp['coordinates'][0]},
+                        draggable: false,
+                        map: map,
+                        title: temp['text'] + " (" +temp['sentiment'] + " )",
+                        icon: new google.maps.MarkerImage(iconImg,null,null,new google.maps.Point(40,110), new google.maps.Size(100,80))
+                    });
+                    
+                        
+                    markers.push(marker);
+                
+                    attachMessage(marker);
+                    
+                    
+                }
+
+                markerCluster = new MarkerClusterer(map, markers, {
+                minZoom: 2,
+                maxZoom: 6,
+            
+                });
+            }
+        });
+        
+    }   
+    
+    function deleteMarkers() {
+       clearMarkers();
+       markers = [];
+    }
+    function clearMarkers() {
+        setAllMap(null);
+    }
+    function setAllMap(map) {
+       for (var i = 0; i < markers.length; i++) {
+         markers[i].setMap(map);
+       }
+    }
+    
+    function clearClusters(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        markerCluster.clearMarkers();
+    }
+
+    
+</script>
+</body>
+</html>
